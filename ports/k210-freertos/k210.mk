@@ -1,5 +1,6 @@
 # SHELL:=/bin/bash
 CC = $(CROSS_COMPILE)gcc
+CPP = $(CC) -E
 CXX = $(CROSS_COMPILE)c++
 AR = $(CROSS_COMPILE)ar
 OBJCOPY = $(CROSS_COMPILE)objcopy
@@ -93,6 +94,7 @@ BIN_LDFLAGS := \
 		$(BIN_DIR)/drivers.a \
 		$(BIN_DIR)/api.a \
 		$(BIN_DIR)/libkendryte.a \
+		./platform/api/lib_mic.a\
 		-lm -latomic -lc -lstdc++ \
 		-Wl,--start-group \
 		-lc \

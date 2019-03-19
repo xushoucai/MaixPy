@@ -4,7 +4,16 @@ MAIXPY
 
 ## Compile
 
-1. Compile MicroPython cross compiler
+
+
+### Install dependence
+
+```
+sudo apt install build-essential cmake 
+```
+
+
+### Compile MicroPython cross compiler
 
 Build in root path of MaixPy
 ```
@@ -12,7 +21,7 @@ cd MaixPy
 make -C mpy-cross
 ```
 
-2. Get toolchain and Edit `config.conf `, set `toolchain_path`
+### Get toolchain and Edit `config.conf `, set `toolchain_path`
 
 
 * Downlaod toolchain from [kendryte](https://kendryte.com/downloads/) (toolchain V8.2)
@@ -50,22 +59,29 @@ Board=goD
 ```
 
 
+### Initialize submodules
 
-* Install dependence
 
+```shell
+git submodule init
+git submodule update --recursive
 ```
-sudo apt install cmake
-```
 
-1. Build
+### Config modules
+
+Edit modules_confg.mk
+
+
+### Build
 
 Build port
 ```
-chmod +x build.sh
 ./build.sh
 ```
 
 Then we can get bin file(s) in `output` folder
+
+-------------------
 
 ## Burn(/Flash)
 
@@ -114,6 +130,9 @@ more parameters use
 ```
 ./flash.sh help
 ```
+
+-----
+
 
 ## For contribute developer
 
