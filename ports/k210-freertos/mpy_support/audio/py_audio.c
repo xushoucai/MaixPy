@@ -83,7 +83,6 @@ STATIC mp_obj_t Maix_audio_init_helper(Maix_audio_obj_t *self, size_t n_args, co
         }
     }else if(args[ARG_path].u_obj != mp_const_none)
     {
-        printf("[MAIXPY] : audiof file init\n");
         int err = 0;
         char* path_str = mp_obj_str_get_str(args[ARG_path].u_obj);
         mp_obj_t fp = vfs_internal_open(path_str,"+b",&err);
@@ -131,7 +130,7 @@ STATIC mp_obj_t Maix_audio_init(size_t n_args, const mp_obj_t *args, mp_map_t *k
 MP_DEFINE_CONST_FUN_OBJ_KW(Maix_audio_init_obj,0 ,Maix_audio_init);
 
 //----------------bo byte ------------------------
-STATIC mp_obj_t Maix_audio_to_byte(Maix_audio_obj_t* self) {
+STATIC mp_obj_t Maix_audio_to_bytes(Maix_audio_obj_t* self) {
     audio_t* audio = &self->audio; 
     if(audio->buf == NULL || audio->points == 0)
         mp_raise_msg(&mp_type_AttributeError,"empty Audio");
@@ -144,7 +143,7 @@ STATIC mp_obj_t Maix_audio_to_byte(Maix_audio_obj_t* self) {
     return audio_array;
 }
 
-MP_DEFINE_CONST_FUN_OBJ_1(Maix_audio_to_byte_obj, Maix_audio_to_byte);
+MP_DEFINE_CONST_FUN_OBJ_1(Maix_audio_to_bytes_obj, Maix_audio_to_bytes);
 
 //----------------play_process ------------------------
 STATIC mp_obj_t Maix_audio_play_process(mp_obj_t self_in,mp_obj_t I2S_dev) {
@@ -159,7 +158,7 @@ STATIC mp_obj_t Maix_audio_play_process(mp_obj_t self_in,mp_obj_t I2S_dev) {
     uint32_t file_size = vfs_internal_size(audio->fp);
     if(0 == file_size)
     {
-        printf("[MAIXPY]: file length is 0\n");
+        mp_printf(&mp_plat_print, "[MAIXPY]: file length is 0\n");
         return mp_const_false;
     }
     switch(audio->format)
@@ -219,14 +218,14 @@ STATIC mp_obj_t Maix_audio_record_process(size_t n_args, const mp_obj_t *pos_arg
     uint32_t file_size = vfs_internal_size(audio->fp);
     if(0 != file_size)
     {
-        printf("[MAIXPY]: file length isn't empty\n");
+        mp_printf(&mp_plat_print, "[MAIXPY]: file length isn't empty\n");
         return mp_const_false;
     }
     switch(audio->format)
     {
         case AUDIO_WAV_FMT:
             if(args[ARG_channels].u_int > 2){//get channel num
-                printf("[MAIXPY]: The number of channels must be less than or equal to 2\n");
+                mp_printf(&mp_plat_print, "[MAIXPY]: The number of channels must be less than or equal to 2\n");
                 return mp_const_false;
             }
             return wav_record_process(audio,args[ARG_channels].u_int);
@@ -293,7 +292,7 @@ MP_DEFINE_CONST_FUN_OBJ_1(Maix_audio_deinit_obj, Maix_audio_deinit);
 STATIC const mp_rom_map_elem_t Maix_audio_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&Maix_audio_init_obj) },
     { MP_ROM_QSTR(MP_QSTR___deinit__), MP_ROM_PTR(&Maix_audio_deinit_obj) },
-    { MP_ROM_QSTR(MP_QSTR_tobyte), MP_ROM_PTR(&Maix_audio_to_byte_obj) },  
+    { MP_ROM_QSTR(MP_QSTR_to_bytes), MP_ROM_PTR(&Maix_audio_to_bytes_obj) },  
     { MP_ROM_QSTR(MP_QSTR_play_process), MP_ROM_PTR(&Maix_audio_play_process_obj) }, 
     { MP_ROM_QSTR(MP_QSTR_play), MP_ROM_PTR(&Maix_audio_play_obj) }, 
     { MP_ROM_QSTR(MP_QSTR_record_process), MP_ROM_PTR(&Maix_audio_record_process_obj) }, 

@@ -64,10 +64,7 @@ void fb_alloc_mark()
 void fb_alloc_free_till_mark()
 {
     uint8_t i;
-    
-    // printf("--------------\n");
-    // printf("maxi mark:%d\n", m_mark_max_now);
-    // printf("maxi count:%d\n", m_count_max_now);
+
     for(i=0; i<FB_MAX_ALLOC_TIMES; ++i)
     {
         if( m_fb_alloc_addr[i].valid && m_fb_alloc_addr[i].mark==m_mark_max_now)
@@ -79,11 +76,8 @@ void fb_alloc_free_till_mark()
         }
     }
     --m_mark_max_now;
-    // printf("maxi mark:%d\n", m_mark_max_now);
-    // printf("maxi count:%d\n\n", m_count_max_now);
 }
-// uint8_t index_max = 0;
-// returns null pointer without error if size==0
+
 void *fb_alloc(uint64_t size)
 {
     uint8_t i;
@@ -91,22 +85,16 @@ void *fb_alloc(uint64_t size)
     if (!size) {
         return NULL;
     }
-    size=((size+sizeof(uint64_t)-1)/sizeof(uint64_t))*sizeof(uint64_t);// Round Up
-    // printf("malloc size:%d\n",size);
+    // size=((size+sizeof(uint64_t)-1)/sizeof(uint64_t))*sizeof(uint64_t);// Round Up
+    size=((size+32-1)/32)*32;//TODO:
     void* p = malloc(size);
     if(!p)
         fb_alloc_fail();
-    // printf("%p\n", p);
 
     for(i=0; i<FB_MAX_ALLOC_TIMES; ++i)
     {
         if( !m_fb_alloc_addr[i].valid )
         {
-            // if(i>index_max)
-            // {
-            //     index_max = i;
-            //     printf("index_max:%d\n", index_max);
-            // }
             m_fb_alloc_addr[i].valid = true;
             m_fb_alloc_addr[i].p = p;
             m_fb_alloc_addr[i].mark = m_mark_max_now;
@@ -142,11 +130,6 @@ void *fb_alloc_all(uint64_t *size)
     {
         if( !m_fb_alloc_addr[i].valid )
         {
-            // if(i>index_max)
-            // {
-            //     index_max = i;
-            //     printf("index_max:%d\n", index_max);
-            // }
             m_fb_alloc_addr[i].valid = true;
             m_fb_alloc_addr[i].p = p;
             m_fb_alloc_addr[i].mark = m_mark_max_now;
@@ -158,7 +141,6 @@ void *fb_alloc_all(uint64_t *size)
     if(i == FB_MAX_ALLOC_TIMES)
     {
         free(p);
-        // printf("fb_alloc_all: i:%d,%d\n", i, FB_MAX_ALLOC_TIMES);
         fb_alloc_fail_2();
     }
     *size = OMV_FB_ALLOC_SIZE;
@@ -176,12 +158,11 @@ void *fb_alloc0_all(uint64_t *size)
 void fb_free()
 {
     uint8_t i;
-
+    
     for(i=0; i<FB_MAX_ALLOC_TIMES; ++i)
     {
         if( m_fb_alloc_addr[i].valid && m_fb_alloc_addr[i].count==m_count_max_now)
         {
-            // printf("free %p\n", m_fb_alloc_addr[i].p);
             free(m_fb_alloc_addr[i].p);
             m_fb_alloc_addr[i].p = NULL;
             m_fb_alloc_addr[i].valid = false;

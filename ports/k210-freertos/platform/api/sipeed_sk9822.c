@@ -1,25 +1,26 @@
 #include "sipeed_sk9822.h"
+#include "py/mpprint.h"
 
 #define LED_NUM 12
 
 #define SK9822_DAT_SET()                 \
     {                                    \
-        gpiohs->output_val.bits.b14 = 1; \
+        gpiohs->output_val.bits.b27 = 1; \
     }
 
 #define SK9822_DAT_CLR()                 \
     {                                    \
-        gpiohs->output_val.bits.b14 = 0; \
+        gpiohs->output_val.bits.b27 = 0; \
     }
 
 #define SK9822_CLK_SET()                 \
     {                                    \
-        gpiohs->output_val.bits.b15 = 1; \
+        gpiohs->output_val.bits.b28 = 1; \
     }
 
 #define SK9822_CLK_CLR()                 \
     {                                    \
-        gpiohs->output_val.bits.b15 = 0; \
+        gpiohs->output_val.bits.b28 = 0; \
     }
 
 static void sk9822_init(void)
@@ -190,7 +191,7 @@ void sk9822_horse_race(uint8_t r, uint8_t g, uint8_t b, uint32_t interval, uint8
     {
         // led_frame[index] = sk9822_gen_data_one_led((0xe0|(index*4)),r-40*index,g-30*index,b-20*index);
         led_frame[index] = sk9822_gen_data_one_led((0xe0 | (32 - index * 4)), r, g, b);
-        printf("0x%x\r\n", led_frame[index]);
+        mp_printf(&mp_plat_print, "0x%x\r\n", led_frame[index]);
     }
 
     for (index = 0; index < times; index++)

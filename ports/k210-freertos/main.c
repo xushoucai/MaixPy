@@ -74,6 +74,7 @@
 #include "sensor.h"
 #include "omv.h"
 #include "sipeed_conv.h"
+#include "ide_dbg.h"
 
 #define UART_BUF_LENGTH_MAX 269
 
@@ -163,7 +164,7 @@ STATIC bool init_sdcard_fs(void) {
     }
 	
     if (first_part) {
-        printf("PYB: can't mount SD card\n");
+        printk("PYB: can't mount SD card\n");
         return false;
     } else {
         return true;
@@ -199,10 +200,10 @@ MP_NOINLINE STATIC bool init_flash_spiffs()
 	if(FORMAT_FS_FORCE || res != SPIFFS_OK || res==SPIFFS_ERR_NOT_A_FS)
 	{
 		SPIFFS_unmount(&vfs_spiffs->fs);
-		printf("[MAIXPY]:Spiffs Unmount.\n");
-		printf("[MAIXPY]:Spiffs Formating...\n");
+		printk("[MAIXPY]:Spiffs Unmount.\n");
+		printk("[MAIXPY]:Spiffs Formating...\n");
 		s32_t format_res=SPIFFS_format(&vfs_spiffs->fs);
-		printf("[MAIXPY]:Spiffs Format %s \n",format_res?"failed":"successful");
+		printk("[MAIXPY]:Spiffs Format %s \n",format_res?"failed":"successful");
 		if(0 != format_res)
 		{
 			return false;
@@ -215,7 +216,7 @@ MP_NOINLINE STATIC bool init_flash_spiffs()
 			spiffs_cache_buf,
 			sizeof(spiffs_cache_buf),
 			0);
-		printf("[MAIXPY]:Spiffs Mount %s \n", res?"failed":"successful");
+		printk("[MAIXPY]:Spiffs Mount %s \n", res?"failed":"successful");
 		if(!res)
 		{
 
@@ -224,7 +225,7 @@ MP_NOINLINE STATIC bool init_flash_spiffs()
 	
 	mp_vfs_mount_t *vfs = m_new_obj(mp_vfs_mount_t);
     if (vfs == NULL) {
-        printf("[MaixPy]:can't mount flash\n");
+        printk("[MaixPy]:can't mount flash\n");
 		return false;
     }
     vfs->str = "/flash";
@@ -240,6 +241,22 @@ MP_NOINLINE STATIC bool init_flash_spiffs()
 	return true;
 }
 
+#if MICROPY_ENABLE_COMPILER
+void pyexec_str(vstr_t* str) {
+    nlr_buf_t nlr;
+    if (nlr_push(&nlr) == 0) {
+        mp_lexer_t *lex = mp_lexer_new_from_str_len(MP_QSTR__lt_stdin_gt_, str->buf, str->len, 0);
+        qstr source_name = lex->source_name;
+        mp_parse_tree_t parse_tree = mp_parse(lex, MP_PARSE_FILE_INPUT);
+        mp_obj_t module_fun = mp_compile(&parse_tree, source_name, MP_EMIT_OPT_NONE, true);
+        mp_call_function_0(module_fun);
+        nlr_pop();
+    } else {
+        // uncaught exception
+        mp_obj_print_exception(&mp_plat_print, (mp_obj_t)nlr.ret_val);
+    }
+}
+#endif
 
 void mp_task(
 	#if MICROPY_PY_THREAD 
@@ -259,7 +276,7 @@ soft_reset:
 		//mp_stack_set_limit(MP_TASK_STACK_SIZE - 1024);//Not open MICROPY_STACK_CHECK
 #if MICROPY_ENABLE_GC
 		gc_init(heap, heap + sizeof(heap));
-		printk("heap0=%x\r\n",heap);
+		printk("heap0=%p\r\n",heap);
 #endif
 		mp_init();
 		mp_obj_list_init(mp_sys_path, 0);
@@ -267,7 +284,27 @@ soft_reset:
 		mp_obj_list_init(mp_sys_argv, 0);//append agrv here
     	readline_init0();
 		// module init
-		omv_init();
+		if(!omv_init()) //init before uart
+		{
+			printk("omv init fail\r\n");
+		}
+
+#if MICROPY_HW_UART_REPL
+		{
+			mp_obj_t args[3] = {
+				MP_OBJ_NEW_SMALL_INT(MICROPY_UARTHS_DEVICE),
+				MP_OBJ_NEW_SMALL_INT(115200),
+				MP_OBJ_NEW_SMALL_INT(8),
+			};
+			fpioa_set_function(4, FUNC_UARTHS_RX);
+		    fpioa_set_function(5,  FUNC_UARTHS_TX);
+			MP_STATE_PORT(Maix_stdio_uart) = machine_uart_type.make_new((mp_obj_t)&machine_uart_type, MP_ARRAY_SIZE(args), 0, args);
+			uart_attach_to_repl(MP_STATE_PORT(Maix_stdio_uart), true);
+		}
+#else
+		MP_STATE_PORT(Maix_stdio_uart) = NULL;
+#endif
+
 		// initialise peripherals
 		bool mounted_sdcard = false;
 		bool mounted_flash= false;
@@ -282,34 +319,52 @@ soft_reset:
     	}
 		if (mounted_sdcard) {
 		}
-#if MICROPY_HW_UART_REPL
-		{
-			mp_obj_t args[3] = {
-				MP_OBJ_NEW_SMALL_INT(MICROPY_UARTHS_DEVICE),
-				MP_OBJ_NEW_SMALL_INT(115200),
-				MP_OBJ_NEW_SMALL_INT(8),
-			};
-			MP_STATE_PORT(Maix_stdio_uart) = machine_uart_type.make_new((mp_obj_t)&machine_uart_type, MP_ARRAY_SIZE(args), 0, args);
-			uart_attach_to_repl(MP_STATE_PORT(Maix_stdio_uart), true);
-		}
-#else
-		MP_STATE_PORT(Maix_stdio_uart) = NULL;
-#endif
 		// run boot-up scripts
 		mp_hal_set_interrupt_char(CHAR_CTRL_C);
 		pyexec_frozen_module("_boot.py");
 
-		for (;;) {
-			if (pyexec_mode_kind == PYEXEC_MODE_RAW_REPL) {
-				if (pyexec_raw_repl() != 0) {
-					break;
+		do{
+			ide_dbg_init();
+			while( (!ide_dbg_script_ready()) && (!ide_dbg_need_save_file()))
+			{
+				nlr_buf_t nlr;
+				if (nlr_push(&nlr) == 0)
+				{
+					if (pyexec_mode_kind == PYEXEC_MODE_RAW_REPL)
+					{
+						if (pyexec_raw_repl() != 0)
+						{
+							break;
+						}
+					}
+					else
+					{
+						if (pyexec_friendly_repl() != 0)
+						{
+							break;
+						}
+					}
 				}
-			} else {
-				if (pyexec_friendly_repl() != 0) {
-					break;
+				nlr_pop();
+			}
+			if(ide_dbg_need_save_file())
+			{
+				ide_save_file();
+			}
+			if(ide_dbg_script_ready())
+			{
+				nlr_buf_t nlr;
+            	if (nlr_push(&nlr) == 0)
+				{
+					pyexec_str(ide_dbg_get_script());
+					nlr_pop();
+				}
+				else
+				{
+					mp_obj_print_exception(&mp_plat_print, (mp_obj_t)nlr.ret_val);
 				}
 			}
-		}
+		}while(MP_STATE_PORT(Maix_stdio_uart)->ide_debug_mode);
 
 #if MICROPY_PY_THREAD
 		mp_thread_deinit();
@@ -346,10 +401,9 @@ int main()
 	w25qxx_init_dma(3, 0);
 	w25qxx_enable_quad_mode_dma();
 	w25qxx_read_id_dma(&manuf_id, &device_id);
-	uint32_t res = 0;
 	for(int i = 0; i < FREQ_READ_NUM; i++)
 	{
-		res = sys_spiffs_read(FREQ_STORE_ADDR + i * 4 ,4,(uint8_t* )(&store_freq[i]));
+		sys_spiffs_read(FREQ_STORE_ADDR + i * 4 ,4,(uint8_t* )(&store_freq[i]));
 		store_freq[i] = store_freq[i] > max_freq[i] ? max_freq[i] : store_freq[i];
 		store_freq[i] = store_freq[i] < 26000000 ? max_freq[i] : store_freq[i];
 	}
@@ -406,6 +460,7 @@ void do_str(const char *src, mp_parse_input_kind_t input_kind) {
 }
 
 void nlr_jump_fail(void *val) {
+	printk("nlr_jump_fail\r\n");
     while (1);
 }
 
