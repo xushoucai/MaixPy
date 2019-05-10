@@ -49,6 +49,7 @@
 #include "plic.h"
 #include "printf.h"
 #include "syslog.h"
+#include "atomic.h"
 /*****peripheral****/
 #include "fpioa.h"
 #include "gpio.h"
@@ -75,6 +76,8 @@
 #include "omv.h"
 #include "sipeed_conv.h"
 #include "ide_dbg.h"
+
+// #define MAIXPY_DEBUG_UARTHS_REPL_UART3
 
 #define UART_BUF_LENGTH_MAX 269
 
@@ -276,11 +279,10 @@ soft_reset:
 		//mp_stack_set_limit(MP_TASK_STACK_SIZE - 1024);//Not open MICROPY_STACK_CHECK
 #if MICROPY_ENABLE_GC
 		gc_init(heap, heap + sizeof(heap));
-		printk("heap0=%p\r\n",heap);
+		printk("gc heap=%p-%p\r\n",heap, heap+sizeof(heap));
 #endif
 		mp_init();
 		mp_obj_list_init(mp_sys_path, 0);
-		mp_obj_list_append(mp_sys_path, MP_OBJ_NEW_QSTR(MP_QSTR_));
 		mp_obj_list_init(mp_sys_argv, 0);//append agrv here
     	readline_init0();
 		// module init
@@ -288,16 +290,26 @@ soft_reset:
 		{
 			printk("omv init fail\r\n");
 		}
-
 #if MICROPY_HW_UART_REPL
 		{
 			mp_obj_t args[3] = {
+				#ifdef MAIXPY_DEBUG_UARTHS_REPL_UART3
+				MP_OBJ_NEW_SMALL_INT(UART_DEVICE_3),
+				#else
 				MP_OBJ_NEW_SMALL_INT(MICROPY_UARTHS_DEVICE),
+				#endif
 				MP_OBJ_NEW_SMALL_INT(115200),
 				MP_OBJ_NEW_SMALL_INT(8),
 			};
+			#ifdef MAIXPY_DEBUG_UARTHS_REPL_UART3
+			fpioa_set_function(9, FUNC_UARTHS_RX);
+		    fpioa_set_function(10,  FUNC_UARTHS_TX);
+			fpioa_set_function(4, FUNC_UART3_RX);
+		    fpioa_set_function(5,  FUNC_UART3_TX);
+			#else
 			fpioa_set_function(4, FUNC_UARTHS_RX);
 		    fpioa_set_function(5,  FUNC_UARTHS_TX);
+			#endif
 			MP_STATE_PORT(Maix_stdio_uart) = machine_uart_type.make_new((mp_obj_t)&machine_uart_type, MP_ARRAY_SIZE(args), 0, args);
 			uart_attach_to_repl(MP_STATE_PORT(Maix_stdio_uart), true);
 		}
@@ -380,6 +392,30 @@ soft_reset:
 }
 
 
+typedef int (*dual_func_t)(int);
+corelock_t  lock; 
+volatile dual_func_t dual_func=0;
+void* arg_list[16];
+
+int core1_function(void *ctx)
+{
+    uint64_t core = current_coreid();
+    //printk("Core %ld Hello world\r\n", core);
+
+    while(1)
+	{
+		if(dual_func)
+		{//corelock_lock(&lock);
+			(*dual_func)(1);
+			dual_func=0;
+			//corelock_unlock(&lock);
+		}
+		
+		//usleep(1);
+	}
+}
+
+
 #define CPU 0
 #define KPU 1
 #define I2S 2
@@ -410,6 +446,7 @@ int main()
 	sysctl_cpu_set_freq(store_freq[CPU]);
 	uarths_init();
 	sysctl_clock_set_threshold(SYSCTL_THRESHOLD_AI, (PLL1_MAX_OUTPUT_FREQ / store_freq[KPU]) / 2);
+	printk("\r\n");
 	printk("[MAIXPY]Pll0:freq:%d\r\n",sysctl_clock_get_freq(SYSCTL_CLOCK_PLL0));
 	printk("[MAIXPY]Pll1:freq:%d\r\n",sysctl_clock_get_freq(SYSCTL_CLOCK_PLL1));
 	printk("[MAIXPY]Pll2:freq:%d\r\n",sysctl_clock_get_freq(SYSCTL_CLOCK_PLL2));
@@ -429,6 +466,10 @@ int main()
 	printk("[MAIXPY]Flash:0x%02x:0x%02x\r\n", manuf_id, device_id);
     /* Init SPI IO map and function settings */
     sysctl_set_spi0_dvp_data(1);
+	/* open core 1 */
+	printk("open second core...\r\n");
+    register_core1(core1_function, 0);
+    
 #if MICROPY_PY_THREAD 
 	xTaskCreateAtProcessor(0, // processor
 						 mp_task, // function entry
