@@ -479,23 +479,23 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_1(esp8285_nic_isconnected_obj, esp8285_nic_isconn
 
 STATIC mp_obj_t esp8285_nic_ifconfig(mp_obj_t self_in) {
 	nic_obj_t* self = self_in;
-	ipconfig_obj* esp_ipconfig = m_new_obj_with_finaliser(ipconfig_obj);
-	esp_ipconfig->gateway = mp_const_none;
-	esp_ipconfig->ip = mp_const_none;
-	esp_ipconfig->MAC = mp_const_none;
-	esp_ipconfig->netmask = mp_const_none;
-	esp_ipconfig->ssid = mp_const_none;
-	if(false == get_ipconfig(&self->esp8285,esp_ipconfig))
+	ipconfig_obj esp_ipconfig;
+	esp_ipconfig.gateway = mp_const_none;
+	esp_ipconfig.ip = mp_const_none;
+	esp_ipconfig.MAC = mp_const_none;
+	esp_ipconfig.netmask = mp_const_none;
+	esp_ipconfig.ssid = mp_const_none;
+	if(false == get_ipconfig(&self->esp8285, &esp_ipconfig))
 	{
 		return mp_const_none;
 	}
-	mp_obj_t tuple[7] = { esp_ipconfig->ip,
-						  esp_ipconfig->netmask,
-						  esp_ipconfig->gateway,
+	mp_obj_t tuple[7] = { esp_ipconfig.ip,
+						  esp_ipconfig.netmask,
+						  esp_ipconfig.gateway,
 						  mp_obj_new_str("0",strlen("0")),
 						  mp_obj_new_str("0",strlen("0")),
-						  esp_ipconfig->MAC,
-						  esp_ipconfig->ssid
+						  esp_ipconfig.MAC,
+						  esp_ipconfig.ssid
 						};
 	return mp_obj_new_tuple(MP_ARRAY_SIZE(tuple), tuple);
 }
@@ -505,28 +505,45 @@ STATIC mp_obj_t esp8285_scan_wifi(mp_obj_t self_in)
 {
     nic_obj_t* self = self_in;
     mp_obj_t list = mp_obj_new_list(0, NULL);
+    char fail_str[30] ;
+    char* buf = (char*)self->esp8285.buffer;
+    bool end;
+    int err_code = 0;
 
-    if (eATCWLAP(&self->esp8285) == true)
+    if (!eATCWLAP_Start(&self->esp8285))
     {
-        int i = 0;
-        char *p = strtok(self->esp8285.buffer, "\r\n\"");
-
-        while (p != NULL)
+        err_code = -1;
+        goto err;
+    }
+    while(1)
+    {
+        if(!eATCWLAP_Get(&self->esp8285, &end) )
         {
-            if ((i % 5) == 1)
-            {
-                mp_obj_list_append(list, mp_obj_new_str(p, strlen(p)));
-            }
-            i++;
-            p = strtok(NULL, "\r\n\"");
+            err_code = -2;
+            goto err;
         }
+        char* index1 = strstr(buf, "(");
+        if(!index1)
+        {
+            err_code = -3;
+            goto err;
+        }
+        char* index2 = strstr(index1, ")");
+        if(!index2)
+        {
+            err_code = -4;
+            goto err;
+        }
+        *index2 = '\0';
+        index1 += 1;
+        mp_obj_list_append(list, mp_obj_new_str(index1, strlen(index1)));
+        if(end)
+            break;
     }
-    else
-    {
-        mp_raise_msg(&mp_type_OSError, "wifi scan fail");
-    }
-
     return list;
+err:
+    snprintf(fail_str, sizeof(fail_str), "wifi scan fail:%d", err_code);
+    mp_raise_msg(&mp_type_OSError, fail_str);
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(esp8285_scan_wifi_obj, esp8285_scan_wifi);
 
